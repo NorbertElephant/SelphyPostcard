@@ -74,11 +74,13 @@ function jpegInfo(buf) {
 }
 
 let page;
+let lastFileName = '';
 
 /** Clique sur Télécharger et renvoie le JPEG téléchargé. */
 async function download(label) {
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#downloadBtn')]);
-  assert.match(dl.suggestedFilename(), /^selphy_\d{8}_\d{6}\.jpg$/, 'nom de fichier');
+  assert.match(dl.suggestedFilename(), /^selphy(_carte|_carre)?_\d{8}_\d{6}\.jpg$/, 'nom de fichier');
+  lastFileName = dl.suggestedFilename();
   const buf = await readFile(await dl.path());
   await writeFile(join(OUT, `${label}.jpg`), buf);
   return buf;
@@ -217,6 +219,33 @@ await check('Retirer la photo : retour à l\'écran d\'accueil', async () => {
 });
 
 await page.screenshot({ path: join(OUT, 'screenshot.png') });
+
+await check('Format carte (54 × 86 mm) : 1016 × 638, puis 638 × 1016', async () => {
+  await page.selectOption('#formatSelect', 'card');
+  let buf = await download('carte');
+  assert.match(lastFileName, /^selphy_carte_/);
+  assert.deepEqual(Object.values(jpegInfo(buf)).slice(0, 2), [638, 1016]);   // hauteur, largeur
+  await page.click('#orientBtn');
+  buf = await download('carte-portrait');
+  assert.deepEqual(Object.values(jpegInfo(buf)).slice(0, 2), [1016, 638]);
+});
+
+await check('Étiquette carrée (50 × 50 mm) : 591 × 591, sans bouton d\'orientation', async () => {
+  await page.selectOption('#formatSelect', 'square');
+  assert.ok(await page.isHidden('#orientBtn'));
+  const buf = await download('carre');
+  assert.match(lastFileName, /^selphy_carre_/);
+  const info = jpegInfo(buf);
+  assert.deepEqual([info.width, info.height], [591, 591]);
+  assert.deepEqual(info.dpi, { units: 1, x: 300, y: 300 });
+});
+
+await check('Le dernier format choisi est mémorisé', async () => {
+  await page.reload();
+  assert.equal(await page.inputValue('#formatSelect'), 'square');
+  // Retour à la carte postale pour la suite des tests.
+  await page.selectOption('#formatSelect', 'postcard');
+});
 
 await check('Téléphone à l\'horizontale : aperçu exploitable', async () => {
   const p2 = await context.newPage();

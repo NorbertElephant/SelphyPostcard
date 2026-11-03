@@ -8,6 +8,19 @@ L'appli produit un JPEG de **1748 × 1181 px** (paysage) ou **1181 × 1748 px**
 (portrait), soit exactement 148 × 100 mm à 300 dpi. L'impression se fait ensuite
 hors de l'appli (clé USB / carte SD, ou partage vers l'appli SELPHY).
 
+Elle gère aussi les autres papiers sans bordure de la CP1500 (d'après la
+[fiche technique Canon](https://asia.canon/en/consumer/selphy-cp1500/black/specification)) :
+
+| Format (menu en haut) | Papier | Sortie à 300 dpi | Fichier |
+|---|---|---|---|
+| Carte postale | 100 × 148 mm — RP-108, RP-54, KP-108IN, KP-36IP | 1748 × 1181 px | `selphy_….jpg` |
+| Carte | 54 × 86 mm — KC-36IP, étiquettes pleine taille KC-18IF | 1016 × 638 px | `selphy_carte_….jpg` |
+| Étiquette carrée | 50 × 50 mm — KC-18IS | 591 × 591 px | `selphy_carre_….jpg` |
+
+Le dernier format choisi est mémorisé. Les formats Carte et Étiquette carrée
+demandent la cassette optionnelle PCC-CP400. Les feuilles de 8 mini-étiquettes
+(KC-18IL) et le format L ne sont pas gérés.
+
 - 100 % côté client : aucune requête réseau, aucune dépendance, aucun build.
 - Fonctionne hors ligne une fois installée.
 - Android (Chrome) en priorité, fonctionne aussi sur desktop.
@@ -135,11 +148,17 @@ ajouter de marge blanche.
 4. Imprimer. Les ~2 mm de chaque bord sont rognés — c'est le rôle du guide
    « Zone de sécurité ».
 
+**Formats Carte et Étiquette carrée :** mettre la cassette PCC-CP400 avec le
+papier correspondant, et copier les fichiers `selphy_carte_*` ou `selphy_carre_*`.
+Les marges de sécurité de ces formats (2 mm pour la carte, 1,5 mm pour le carré)
+sont des estimations, non publiées par Canon : faites une impression d'essai
+avant d'en lancer plusieurs.
+
 ### Par l'appli SELPHY Photo Layout (Wi-Fi)
 
 1. Dans Selphy Postcard, toucher **Partager** et choisir **SELPHY Photo Layout**
    (ou **Télécharger**, puis ouvrir la photo depuis SELPHY Photo Layout).
-2. Dans SELPHY Photo Layout, choisir le format **Carte postale** et l'impression
+2. Dans SELPHY Photo Layout, choisir le même format de papier que dans Selphy Postcard et l'impression
    **sans bordure**, vérifier que la photo n'est pas recadrée différemment, puis imprimer.
 
 ## Confidentialité

@@ -18,7 +18,12 @@
 <body>
   <header class="topbar">
     <h1>Selphy Postcard</h1>
-    <span class="format" id="formatLabel">100 × 148 mm</span>
+    <!-- Format de papier SELPHY (le dernier choisi est mémorisé) -->
+    <select id="formatSelect" class="format-select" aria-label="Format de papier">
+      <option value="postcard">Carte postale · 100 × 148 mm</option>
+      <option value="card">Carte · 54 × 86 mm</option>
+      <option value="square">Étiquette carrée · 50 × 50 mm</option>
+    </select>
     <span class="quality" id="quality" hidden></span>
     <button type="button" id="installBtn" class="btn btn-small" hidden>Installer</button>
   </header>
@@ -65,7 +70,7 @@
     <div class="row">
       <label class="check">
         <input type="checkbox" id="guide" checked>
-        Zone de sécurité (~2 mm rognés)
+        Zone de sécurité (<span id="safeLabel">~2 mm</span> rognés)
       </label>
     </div>
 

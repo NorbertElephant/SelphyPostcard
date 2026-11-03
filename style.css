@@ -52,7 +52,27 @@ body {
   padding: 10px 16px;
 }
 .topbar h1 { font-size: 1.1rem; margin: 0; }
-.format { color: var(--muted); font-size: 0.85rem; flex: 1; }
+/* Sélecteur de format : compact, mais assez haut pour le pouce. */
+.format-select {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+}
+.topbar .quality { margin-left: auto; }
+
+/* Téléphone : le titre cède la place au sélecteur de format et au badge. */
+@media (max-width: 520px) {
+  .topbar h1 { display: none; }
+  .topbar { gap: 8px; }
+}
 
 /* Résolution effective d'impression (orange si risque de flou). */
 .quality {

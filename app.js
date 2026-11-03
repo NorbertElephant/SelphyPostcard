@@ -9,18 +9,25 @@
 // Constantes
 // ---------------------------------------------------------------------------
 
-const OUT_LONG = 1748;          // 148 mm à 300 dpi
-const OUT_SHORT = 1181;         // 100 mm à 300 dpi
-const PAPER_LONG_MM = 148;
-const PAPER_SHORT_MM = 100;
-const SAFE_MM = 2;              // marge rognée en impression sans bordure
+/*
+ * Formats de papier de la SELPHY CP1500 (fiche technique Canon), impression sans bordure.
+ * mm et px : [grand côté, petit côté] ; px = mm / 25,4 × 300 dpi.
+ * safeMm : marge estimée rognée (ou découpée) sur chaque bord.
+ */
+const FORMATS = {
+  postcard: { name: 'Carte postale', mm: [148, 100], px: [1748, 1181], safeMm: 2, file: 'selphy' },
+  card:     { name: 'Carte',         mm: [86, 54],   px: [1016, 638],  safeMm: 2, file: 'selphy_carte' },
+  square:   { name: 'Étiquette carrée', mm: [50, 50], px: [591, 591],  safeMm: 1.5, file: 'selphy_carre' },
+};
+const DEFAULT_FORMAT = 'postcard';
+const FORMAT_STORAGE_KEY = 'selphy-format';   // dernier format choisi (confort, facultatif)
 const MAX_ZOOM = 5;
 const JPEG_QUALITY = 0.95;
 const DPI = 300;
 const WARN_DPI = 200;           // en dessous, l'impression risque d'être floue
-// Au-delà de 3× la sortie, les pixels en plus n'améliorent pas l'impression
-// (même à zoom 3) mais coûtent beaucoup de mémoire : on réduit la photo.
-const MAX_DECODE = OUT_LONG * 3;
+// Au-delà de 3× la plus grande sortie, les pixels en plus n'améliorent pas
+// l'impression (même à zoom 3) mais coûtent beaucoup de mémoire : on réduit la photo.
+const MAX_DECODE = FORMATS.postcard.px[0] * 3;
 const PREVIEW_MAX = 2048;       // copie allégée utilisée pour l'aperçu et le flou
 const SHARE_CACHE = 'selphy-share';
 const SHARE_KEY = './__shared-photo';
@@ -33,13 +40,27 @@ const state = {
   bitmap: null,       // ImageBitmap de travail (orientation EXIF appliquée, ≤ MAX_DECODE)
   small: null,        // copie ≤ PREVIEW_MAX (peut être le même objet que bitmap)
   serial: 0,          // change à chaque nouvelle image (sert de clé au pré-export)
-  landscape: true,    // orientation de la carte
+  format: loadFormat(),   // clé de FORMATS
+  landscape: true,    // orientation de la carte (sans effet pour le carré)
   mode: 'fill',       // 'fill' (Remplir) | 'fit' (Ajuster)
   bg: 'blur',         // fond en mode Ajuster : 'blur' | 'white' | 'black'
   zoom: 1,            // 1 = couverture minimale
   cx: 0, cy: 0,       // centre de la zone visible, en pixels de state.bitmap
   guide: true,        // affiche la zone de sécurité dans l'aperçu
 };
+
+/** Dernier format utilisé (le stockage local peut être indisponible : navigation privée…). */
+function loadFormat() {
+  try {
+    const f = localStorage.getItem(FORMAT_STORAGE_KEY);
+    if (f && FORMATS[f]) return f;
+  } catch (e) { /* stockage indisponible : format par défaut */ }
+  return DEFAULT_FORMAT;
+}
+
+function saveFormat() {
+  try { localStorage.setItem(FORMAT_STORAGE_KEY, state.format); } catch (e) { /* sans importance */ }
+}
 
 // ---------------------------------------------------------------------------
 // Éléments du DOM
@@ -66,7 +87,8 @@ const els = {
   nextBtn: $('nextBtn'),
   removeBtn: $('removeBtn'),
   installBtn: $('installBtn'),
-  formatLabel: $('formatLabel'),
+  formatSelect: $('formatSelect'),
+  safeLabel: $('safeLabel'),
   quality: $('quality'),
   status: $('status'),
 };
@@ -76,10 +98,19 @@ const pctx = els.preview.getContext('2d');
 // Géométrie
 // ---------------------------------------------------------------------------
 
-/** Dimensions de sortie selon l'orientation. */
+/** Dimensions de sortie (px) selon le format et l'orientation. */
 function outputSize() {
-  return state.landscape ? [OUT_LONG, OUT_SHORT] : [OUT_SHORT, OUT_LONG];
+  const [long, short] = FORMATS[state.format].px;
+  return state.landscape ? [long, short] : [short, long];
 }
+
+/** Dimensions du papier (mm) selon le format et l'orientation. */
+function paperMm() {
+  const [long, short] = FORMATS[state.format].mm;
+  return state.landscape ? [long, short] : [short, long];
+}
+
+const isSquare = () => FORMATS[state.format].px[0] === FORMATS[state.format].px[1];
 
 /** Ratio largeur / hauteur de la carte. */
 function cardRatio() {
@@ -201,8 +232,10 @@ function drawBackground(ctx, w, h) {
 
 /** Pointillés indiquant la zone qui sera rognée à l'impression sans bordure. */
 function drawSafeGuide(ctx, w, h) {
-  const mx = w * SAFE_MM / (state.landscape ? PAPER_LONG_MM : PAPER_SHORT_MM);
-  const my = h * SAFE_MM / (state.landscape ? PAPER_SHORT_MM : PAPER_LONG_MM);
+  const [mmW, mmH] = paperMm();
+  const safe = FORMATS[state.format].safeMm;
+  const mx = w * safe / mmW;
+  const my = h * safe / mmH;
   const lw = Math.max(1, w / 400);
   ctx.save();
   // Bandes rognées légèrement assombries.
@@ -387,7 +420,6 @@ function removePhoto() {
   els.controls.hidden = true;
   els.quality.hidden = true;
   els.empty.hidden = false;
-  els.formatLabel.textContent = '100 × 148 mm';
   setStatus('');
 }
 
@@ -411,9 +443,21 @@ function updateUi() {
   els.bgRow.hidden = state.mode !== 'fit';
   els.zoom.value = String(state.zoom);
   els.orientBtn.textContent = state.landscape ? '▭ Paysage' : '▯ Portrait';
-  els.formatLabel.textContent = state.landscape ? '148 × 100 mm' : '100 × 148 mm';
+  els.orientBtn.hidden = isSquare();   // un carré n'a pas d'orientation
+  els.formatSelect.value = state.format;
+  els.safeLabel.textContent = `~${String(FORMATS[state.format].safeMm).replace('.', ',')} mm`;
   els.preview.classList.toggle('static', state.mode !== 'fill');
 }
+
+els.formatSelect.value = state.format;
+els.formatSelect.addEventListener('change', () => {
+  state.format = els.formatSelect.value;
+  saveFormat();
+  if (!state.bitmap) return;
+  resetView();
+  updateUi();
+  layoutPreview();
+});
 
 els.pickBtn.addEventListener('click', () => els.fileInput.click());
 els.nextBtn.addEventListener('click', () => els.fileInput.click());
@@ -649,7 +693,7 @@ let exportCache = null;   // { key, promise }
 let prerenderTimer = 0;
 
 function exportKey() {
-  return [state.serial, state.mode, state.bg, state.landscape, state.zoom, state.cx, state.cy].join('|');
+  return [state.serial, state.format, state.mode, state.bg, state.landscape, state.zoom, state.cx, state.cy].join('|');
 }
 
 /** JPEG du cadrage actuel (réutilise le pré-export s'il est à jour). */
@@ -668,10 +712,13 @@ function schedulePrerender() {
   prerenderTimer = setTimeout(() => getExport().catch(() => {}), 600);
 }
 
-/** Nom de fichier : selphy_AAAAMMJJ_HHMMSS.jpg (heure locale). */
+/**
+ * Nom de fichier (heure locale) : selphy_AAAAMMJJ_HHMMSS.jpg pour la carte postale,
+ * selphy_carte_… ou selphy_carre_… pour les autres formats (faciles à trier sur la clé).
+ */
 function fileName(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0');
-  return `selphy_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_` +
+  return `${FORMATS[state.format].file}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_` +
     `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.jpg`;
 }
 
@@ -705,7 +752,7 @@ els.shareBtn.addEventListener('click', async () => {
   try {
     const blob = await getExport();
     const file = new File([blob], fileName(), { type: 'image/jpeg' });
-    await navigator.share({ files: [file], title: 'Carte postale SELPHY' });
+    await navigator.share({ files: [file], title: `${FORMATS[state.format].name} SELPHY` });
     setStatus('Partagé.');
   } catch (e) {
     if (e.name !== 'AbortError') {
