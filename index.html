@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- CSP stricte : tout vient de l'appli elle-même, aucune requête réseau sortante. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' blob: data:; connect-src 'none'; object-src 'none'; base-uri 'self'">
+  <title>Selphy Postcard</title>
+  <meta name="description" content="Prépare une photo au format carte postale Canon SELPHY CP1500 (100 × 148 mm, sans bordure).">
+  <meta name="theme-color" content="#1e3a5f">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Selphy Postcard</h1>
+    <span class="format" id="formatLabel">100 × 148 mm</span>
+    <button type="button" id="installBtn" class="btn btn-small" hidden>Installer</button>
+  </header>
+
+  <!-- Zone d'aperçu (en haut) -->
+  <main class="stage" id="stage">
+    <div class="empty" id="empty">
+      <p class="empty-title">Choisissez une photo</p>
+      <p class="empty-hint">ou glissez-déposez une image ici</p>
+      <button type="button" class="btn btn-primary btn-big" id="pickBtn">Choisir une photo</button>
+    </div>
+    <canvas id="preview" class="preview" hidden aria-label="Aperçu de la carte postale"></canvas>
+    <div class="drop-overlay" id="dropOverlay" hidden>Déposez la photo</div>
+  </main>
+
+  <!-- Contrôles (en bas, à portée de pouce) -->
+  <section class="controls" id="controls" hidden>
+    <div class="row">
+      <div class="segmented" role="radiogroup" aria-label="Mode">
+        <button type="button" role="radio" data-mode="fill" aria-checked="true">Remplir</button>
+        <button type="button" role="radio" data-mode="fit" aria-checked="false">Ajuster</button>
+      </div>
+      <button type="button" class="btn" id="orientBtn" title="Basculer paysage / portrait">↻ Paysage</button>
+    </div>
+
+    <!-- Mode Remplir : zoom -->
+    <div class="row" id="zoomRow">
+      <label for="zoom" class="label">Zoom</label>
+      <input type="range" id="zoom" min="1" max="5" step="0.01" value="1">
+    </div>
+
+    <!-- Mode Ajuster : fond -->
+    <div class="row" id="bgRow" hidden>
+      <span class="label">Fond</span>
+      <div class="segmented" role="radiogroup" aria-label="Fond">
+        <button type="button" role="radio" data-bg="blur" aria-checked="true">Flou</button>
+        <button type="button" role="radio" data-bg="white" aria-checked="false">Blanc</button>
+        <button type="button" role="radio" data-bg="black" aria-checked="false">Noir</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <label class="check">
+        <input type="checkbox" id="guide" checked>
+        Zone de sécurité (~2 mm rognés)
+      </label>
+    </div>
+
+    <div class="row actions">
+      <button type="button" class="btn btn-primary" id="downloadBtn">Télécharger</button>
+      <button type="button" class="btn btn-primary" id="shareBtn" hidden>Partager</button>
+      <button type="button" class="btn" id="nextBtn">Photo suivante</button>
+    </div>
+  </section>
+
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+
+  <input type="file" id="fileInput" accept="image/*" hidden>
+</body>
+</html>

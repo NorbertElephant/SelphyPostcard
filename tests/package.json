@@ -1,0 +1,12 @@
+{
+  "name": "selphy-postcard-tests",
+  "private": true,
+  "type": "module",
+  "description": "Tests Playwright de Selphy Postcard (non nécessaires pour déployer l'appli).",
+  "scripts": {
+    "test": "node export.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}
