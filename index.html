@@ -28,66 +28,140 @@
     <button type="button" id="installBtn" class="btn btn-small" hidden>Installer</button>
   </header>
 
+  <div class="banners">
+    <!-- Avis de nouvelle version (service worker mis à jour) -->
+    <div class="banner" id="updateBanner" hidden>
+      <span>Nouvelle version disponible.</span>
+      <button type="button" class="btn btn-small" id="reloadBtn">Recharger</button>
+    </div>
+
+    <!-- Navigateur intégré (lien ouvert depuis une messagerie…) : ni partage ni téléchargement fiables -->
+    <div class="banner banner-warn" id="browserHint" hidden>
+      <span>Navigateur intégré détecté : ouvrez cette page dans Chrome (menu ⋮ → « Ouvrir dans Chrome »)
+        pour pouvoir enregistrer et partager les photos.</span>
+    </div>
+  </div>
+
   <!-- Zone d'aperçu (en haut) -->
   <main class="stage" id="stage">
     <div class="empty" id="empty">
-      <p class="empty-title">Choisissez une photo</p>
-      <p class="empty-hint">ou glissez-déposez une image ici</p>
-      <button type="button" class="btn btn-primary btn-big" id="pickBtn">Choisir une photo</button>
+      <p class="empty-title">Choisissez une ou plusieurs photos</p>
+      <p class="empty-hint">ou glissez-déposez des images ici</p>
+      <button type="button" class="btn btn-primary btn-big" id="pickBtn">Choisir des photos</button>
     </div>
-    <canvas id="preview" class="preview" hidden aria-label="Aperçu de la carte postale"></canvas>
-    <div class="drop-overlay" id="dropOverlay" hidden>Déposez la photo</div>
+    <canvas id="preview" class="preview" hidden tabindex="0"
+            aria-label="Aperçu : glisser pour déplacer, pincer ou molette pour zoomer, flèches et +/− au clavier"></canvas>
+    <div class="drop-overlay" id="dropOverlay" hidden>Déposez les photos</div>
   </main>
 
   <!-- Contrôles (en bas, à portée de pouce) -->
   <section class="controls" id="controls" hidden>
-    <div class="row">
-      <div class="segmented" role="radiogroup" aria-label="Mode">
-        <button type="button" role="radio" data-mode="fill" aria-checked="true">Remplir</button>
-        <button type="button" role="radio" data-mode="fit" aria-checked="false">Ajuster</button>
+    <div class="settings">
+      <div class="row">
+        <div class="segmented" role="radiogroup" aria-label="Mode">
+          <button type="button" role="radio" data-mode="fill" aria-checked="true">Remplir</button>
+          <button type="button" role="radio" data-mode="fit" aria-checked="false">Ajuster</button>
+          <button type="button" role="radio" data-mode="polaroid" aria-checked="false">Polaroïd</button>
+        </div>
       </div>
-      <button type="button" class="btn" id="orientBtn" title="Basculer paysage / portrait">▭ Paysage</button>
-      <button type="button" class="btn btn-icon" id="rotateBtn" title="Pivoter la photo de 90°" aria-label="Pivoter la photo de 90°">⟳</button>
-    </div>
 
-    <!-- Mode Remplir : zoom (double-tap sur l'aperçu = recentrer) -->
-    <div class="row" id="zoomRow">
-      <label for="zoom" class="label">Zoom</label>
-      <input type="range" id="zoom" min="1" max="5" step="0.01" value="1">
-      <button type="button" class="btn" id="recenterBtn" title="Recentrer (ou double-tap sur l'aperçu)">Recentrer</button>
-    </div>
+      <div class="row">
+        <button type="button" class="btn" id="orientBtn" title="Basculer paysage / portrait">▭ Paysage</button>
+        <button type="button" class="btn btn-icon" id="rotateBtn" title="Pivoter la photo de 90°" aria-label="Pivoter la photo de 90°">⟳</button>
+        <button type="button" class="btn" id="recenterBtn" title="Recentrer (ou double-tap sur l'aperçu, touche 0)">Recentrer</button>
+      </div>
 
-    <!-- Mode Ajuster : fond -->
-    <div class="row" id="bgRow" hidden>
-      <span class="label">Fond</span>
-      <div class="segmented" role="radiogroup" aria-label="Fond">
-        <button type="button" role="radio" data-bg="blur" aria-checked="true">Flou</button>
-        <button type="button" role="radio" data-bg="white" aria-checked="false">Blanc</button>
-        <button type="button" role="radio" data-bg="black" aria-checked="false">Noir</button>
+      <!-- Zoom (double-tap sur l'aperçu = recentrer) -->
+      <div class="row">
+        <label for="zoom" class="label">Zoom</label>
+        <input type="range" id="zoom" min="1" max="5" step="0.01" value="1">
+      </div>
+
+      <!-- Mode Ajuster : fond -->
+      <div class="row" id="bgRow" hidden>
+        <span class="label">Fond</span>
+        <div class="segmented" role="radiogroup" aria-label="Fond">
+          <button type="button" role="radio" data-bg="blur" aria-checked="true">Flou</button>
+          <button type="button" role="radio" data-bg="white" aria-checked="false">Blanc</button>
+          <button type="button" role="radio" data-bg="black" aria-checked="false">Noir</button>
+        </div>
+      </div>
+
+      <!-- Retouches (s'appliquent à toutes les photos jusqu'à réinitialisation) -->
+      <details class="panel" id="adjustPanel">
+        <summary>Retouches <span class="summary-hint" id="adjustHint"></span></summary>
+        <div class="row">
+          <label for="brightness" class="label">Lumière</label>
+          <input type="range" id="brightness" min="-50" max="50" step="1" value="0">
+          <output class="value" for="brightness" id="brightnessVal">0</output>
+        </div>
+        <div class="row">
+          <label for="contrast" class="label">Contraste</label>
+          <input type="range" id="contrast" min="-50" max="50" step="1" value="0">
+          <output class="value" for="contrast" id="contrastVal">0</output>
+        </div>
+        <div class="row">
+          <label for="saturation" class="label">Couleurs</label>
+          <input type="range" id="saturation" min="-50" max="50" step="1" value="0">
+          <output class="value" for="saturation" id="saturationVal">0</output>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" id="printBoostBtn" title="Les tirages SELPHY sortent souvent un peu plus sombres qu'à l'écran">☀ Éclaircir pour l'impression</button>
+          <button type="button" class="btn" id="adjustResetBtn">Réinitialiser</button>
+        </div>
+      </details>
+
+      <!-- Légende (propre à chaque photo) -->
+      <details class="panel" id="textPanel">
+        <summary>Texte <span class="summary-hint" id="textHint"></span></summary>
+        <div class="row">
+          <input type="text" id="captionText" class="text-input" maxlength="80"
+                 placeholder="Légende (ex. Été 2026, Bretagne)" aria-label="Légende" autocomplete="off">
+        </div>
+        <div class="row">
+          <button type="button" class="btn" id="dateBtn">📅 Date de la photo</button>
+        </div>
+        <div class="row">
+          <span class="label">Police</span>
+          <div class="segmented" role="radiogroup" aria-label="Police">
+            <button type="button" role="radio" data-font="sans" aria-checked="true">Simple</button>
+            <button type="button" role="radio" data-font="serif" aria-checked="false">Serif</button>
+            <button type="button" role="radio" data-font="script" aria-checked="false">Manuscrite</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="row">
+        <label class="check">
+          <input type="checkbox" id="guide" checked>
+          Zone de sécurité (<span id="safeLabel">~2 mm</span> rognés)
+        </label>
       </div>
     </div>
 
-    <div class="row">
-      <label class="check">
-        <input type="checkbox" id="guide" checked>
-        Zone de sécurité (<span id="safeLabel">~2 mm</span> rognés)
-      </label>
-    </div>
-
-    <div class="row actions">
-      <button type="button" class="btn btn-primary" id="downloadBtn">Télécharger</button>
-      <button type="button" class="btn btn-primary" id="shareBtn" hidden>Partager</button>
-      <button type="button" class="btn" id="nextBtn">Photo suivante</button>
-    </div>
-
-    <!-- Retire la photo de l'appli (le fichier d'origine n'est jamais touché). -->
-    <div class="row">
-      <button type="button" class="btn btn-link" id="removeBtn">✕ Retirer la photo</button>
+    <!-- Barre d'actions, toujours visible -->
+    <div class="action-bar">
+      <!-- Navigation dans la série de photos -->
+      <div class="row nav" id="navRow" hidden>
+        <button type="button" class="btn btn-icon" id="prevBtn" aria-label="Photo précédente">◀</button>
+        <span class="counter" id="counter">1 / 1</span>
+        <button type="button" class="btn btn-icon" id="nextNavBtn" aria-label="Photo suivante">▶</button>
+      </div>
+      <div class="row actions">
+        <button type="button" class="btn btn-primary" id="downloadBtn">Télécharger</button>
+        <button type="button" class="btn btn-primary" id="shareBtn" hidden>Partager</button>
+        <button type="button" class="btn" id="nextBtn">Photo suivante</button>
+      </div>
+      <!-- Retire la photo de l'appli (le fichier d'origine n'est jamais touché). -->
+      <div class="row">
+        <button type="button" class="btn btn-link" id="addBtn" title="Ajouter des photos à la série">＋ Ajouter</button>
+        <button type="button" class="btn btn-link" id="removeBtn" title="Retirer cette photo de l'appli (l'original n'est pas touché)">✕ Retirer</button>
+      </div>
     </div>
   </section>
 
   <p class="status" id="status" role="status" aria-live="polite"></p>
 
-  <input type="file" id="fileInput" accept="image/*" hidden>
+  <input type="file" id="fileInput" accept="image/*" multiple hidden>
 </body>
 </html>

@@ -24,11 +24,13 @@ const TYPES = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.png': 'image/png', '.webmanifest': 'application/manifest+json',
 };
+let swExtra = '';   // ajouté à sw.js pour simuler la publication d'une nouvelle version
 const server = createServer(async (req, res) => {
   const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname));
   const file = join(ROOT, path.endsWith('/') || path.endsWith('\\') ? join(path, 'index.html') : path);
   try {
-    const body = await readFile(file);
+    let body = await readFile(file);
+    if (file.endsWith('sw.js') && swExtra) body = Buffer.concat([body, Buffer.from(swExtra)]);
     res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream' });
     res.end(body);
   } catch {
@@ -51,6 +53,23 @@ function makeTestPhoto(w = 1600, h = 1200) {
     }
   }
   return encodePng(w, h, px);
+}
+
+/** Ajoute à un JPEG un bloc EXIF minimal portant la date de prise de vue. */
+function withExifDate(jpeg, date /* 'AAAA:MM:JJ HH:MM:SS' */) {
+  const t = Buffer.alloc(64);                    // en-tête TIFF little-endian
+  t.write('II', 0, 'latin1'); t.writeUInt16LE(42, 2); t.writeUInt32LE(8, 4);
+  // IFD0 : une entrée, pointeur vers l'IFD Exif (offset 26).
+  t.writeUInt16LE(1, 8); t.writeUInt16LE(0x8769, 10); t.writeUInt16LE(4, 12);
+  t.writeUInt32LE(1, 14); t.writeUInt32LE(26, 18); t.writeUInt32LE(0, 22);
+  // IFD Exif : DateTimeOriginal (ASCII, 20 octets à l'offset 44).
+  t.writeUInt16LE(1, 26); t.writeUInt16LE(0x9003, 28); t.writeUInt16LE(2, 30);
+  t.writeUInt32LE(20, 32); t.writeUInt32LE(44, 36); t.writeUInt32LE(0, 40);
+  t.write(`${date}\0`, 44, 'latin1');
+  const payload = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), t]);
+  const seg = Buffer.alloc(4);
+  seg.writeUInt16BE(0xffe1, 0); seg.writeUInt16BE(payload.length + 2, 2);
+  return Buffer.concat([jpeg.subarray(0, 2), seg, payload, jpeg.subarray(2)]);
 }
 
 // ---- Lecture des dimensions et de la densité dans un JPEG ----
@@ -79,7 +98,9 @@ let lastFileName = '';
 /** Clique sur Télécharger et renvoie le JPEG téléchargé. */
 async function download(label) {
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#downloadBtn')]);
-  assert.match(dl.suggestedFilename(), /^selphy(_carte|_carre)?_\d{8}_\d{6}\.jpg$/, 'nom de fichier');
+  // _2, _3… si plusieurs exports tombent dans la même seconde.
+  assert.match(dl.suggestedFilename(), /^selphy(_carte|_carre)?_\d{8}_\d{6}(_\d+)?\.jpg$/,
+    `nom de fichier : ${dl.suggestedFilename()}`);
   lastFileName = dl.suggestedFilename();
   const buf = await readFile(await dl.path());
   await writeFile(join(OUT, `${label}.jpg`), buf);
@@ -247,6 +268,136 @@ await check('Le dernier format choisi est mémorisé', async () => {
   await page.selectOption('#formatSelect', 'postcard');
 });
 
+// ---- Série de photos ----
+const portraitPath = join(OUT, 'photo-3x4.png');
+await writeFile(portraitPath, makeTestPhoto(1200, 1600));
+
+await check('Série : plusieurs photos, cadrage mémorisé par photo', async () => {
+  await page.setInputFiles('#fileInput', [photoPath, portraitPath]);
+  await page.waitForSelector('#navRow:not([hidden])');
+  assert.match(await page.textContent('#counter'), /^1 \/ 2/);
+  await page.locator('#zoom').fill('2');
+  await download('serie-1');
+  assert.match(await page.textContent('#counter'), /1 \/ 2 ✓ · 1 exportée/);
+  await page.click('#nextNavBtn');
+  await page.waitForFunction(() => document.querySelector('#counter').textContent.startsWith('2 / 2'));
+  await page.waitForFunction(() => document.querySelector('#orientBtn').textContent.includes('Portrait'));
+  assert.equal(await page.inputValue('#zoom'), '1');
+  await page.click('#prevBtn');
+  await page.waitForFunction(() => document.querySelector('#orientBtn').textContent.includes('Paysage'));
+  assert.equal(await page.inputValue('#zoom'), '2');   // cadrage de la 1re photo retrouvé
+});
+
+await check('Série : « Photo suivante » en fin de série ouvre le sélecteur', async () => {
+  await page.click('#nextNavBtn');
+  await page.waitForFunction(() => document.querySelector('#counter').textContent.startsWith('2 / 2'));
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#nextBtn')]);
+  assert.ok(chooser.isMultiple(), 'sélection multiple attendue');
+  await chooser.setFiles(photoPath);
+  await page.waitForFunction(() => document.querySelector('#counter').textContent.startsWith('3 / 3'));
+  // Retirer au milieu d'une série affiche la photo suivante.
+  await page.click('#prevBtn');
+  await page.waitForFunction(() => document.querySelector('#counter').textContent.startsWith('2 / 3'));
+  await page.click('#removeBtn');
+  await page.waitForFunction(() => document.querySelector('#counter').textContent.startsWith('2 / 2'));
+  await page.click('#removeBtn');
+  await page.click('#removeBtn');
+  await page.waitForSelector('#controls', { state: 'hidden' });
+});
+
+// ---- Modes Polaroïd et Ajuster libre, légende, retouches ----
+await page.setInputFiles('#fileInput', photoPath);
+await page.waitForSelector('#controls:not([hidden])');
+
+await check('Polaroïd : cadre blanc, photo à l\'intérieur, 1748 × 1181', async () => {
+  await page.click('[data-mode="polaroid"]');
+  const buf = await download('polaroid');
+  const info = jpegInfo(buf);
+  assert.deepEqual([info.width, info.height], [1748, 1181]);
+  const [corner, band, inside] = await samplePixels(buf, [[10, 10], [874, 1140], [300, 500]]);
+  assert.ok(near(corner, [255, 255, 255], 8), `coin blanc attendu : ${corner}`);
+  assert.ok(near(band, [255, 255, 255], 8), `bande du bas blanche attendue : ${band}`);
+  assert.ok(near(inside, [210, 50, 50]), `photo attendue dedans : ${inside}`);
+});
+
+await check('Légende : texte dessiné dans la bande du Polaroïd', async () => {
+  await page.click('#textPanel summary');
+  await page.fill('#captionText', 'Bretagne 2026');
+  const buf = await download('polaroid-legende');
+  const line = Array.from({ length: 300 }, (_, i) => [600 + i, 1112]);
+  const px = await samplePixels(buf, line);
+  const dark = px.filter((c) => c[0] < 128).length;
+  assert.ok(dark > 10, `texte sombre attendu dans la bande (${dark} pixels sombres)`);
+});
+
+await check('Légende : date de prise de vue lue dans l\'EXIF', async () => {
+  const exifPath = join(OUT, 'photo-exif.jpg');
+  await writeFile(exifPath, withExifDate(await readFile(join(OUT, 'remplir.jpg')), '2024:08:15 10:30:00'));
+  await page.setInputFiles('#fileInput', exifPath);
+  await page.waitForFunction(() => document.querySelector('#counter').textContent.startsWith('2 / 2') &&
+    !document.querySelector('#status').textContent.startsWith('Chargement'));
+  assert.equal(await page.inputValue('#captionText'), '');   // légende propre à chaque photo
+  await page.click('#dateBtn');
+  assert.equal(await page.inputValue('#captionText'), '15 août 2024');
+  await page.fill('#captionText', '');
+  await page.click('#removeBtn');
+  await page.waitForFunction(() => document.querySelector('#counter').textContent.startsWith('1 / 1'));
+  await page.fill('#captionText', '');
+});
+
+await check('Ajuster libre : photo réduite et déplaçable dans la carte', async () => {
+  await page.click('[data-mode="fit"]');
+  await page.click('[data-bg="white"]');
+  assert.equal(await page.getAttribute('#zoom', 'min'), '0.3');
+  await page.locator('#zoom').fill('0.5');
+  let buf = await download('ajuster-reduit');
+  // Photo 4:3 à 50 % : environ 787 × 590 px au centre, fond blanc autour.
+  let [left, center] = await samplePixels(buf, [[400, 590], [874, 590]]);
+  assert.ok(near(left, [255, 255, 255], 8), `fond blanc attendu à gauche : ${left}`);
+  assert.ok(!near(center, [255, 255, 255], 8), `photo attendue au centre : ${center}`);
+  // Glisser la photo vers la gauche.
+  const box = await page.locator('#preview').boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - box.width * 0.2, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  buf = await download('ajuster-deplace');
+  [left] = await samplePixels(buf, [[400, 590]]);
+  assert.ok(!near(left, [255, 255, 255], 8), `la photo devrait couvrir la gauche : ${left}`);
+  await page.click('#recenterBtn');
+  assert.equal(await page.inputValue('#zoom'), '1');
+});
+
+await check('Retouches : lumière +50 éclaircit la photo, Réinitialiser l\'annule', async () => {
+  await page.click('[data-mode="fill"]');
+  await page.click('#adjustPanel summary');
+  await page.locator('#brightness').fill('50');
+  let [px] = await samplePixels(await download('lumiere'), [[3, 590]]);
+  assert.ok(near(px, [255, 75, 75]), `rouge éclairci attendu : ${px}`);
+  await page.click('#printBoostBtn');
+  assert.equal(await page.inputValue('#brightness'), '10');
+  assert.match(await page.textContent('#adjustHint'), /actives/);
+  await page.click('#adjustResetBtn');
+  [px] = await samplePixels(await download('lumiere-reset'), [[3, 590]]);
+  assert.ok(near(px, [210, 50, 50]), `rouge d'origine attendu : ${px}`);
+});
+
+await check('Clavier : +, flèches, 0', async () => {
+  await page.focus('#preview');
+  await page.keyboard.press('+');
+  await page.keyboard.press('+');
+  const z = parseFloat(await page.inputValue('#zoom'));
+  assert.ok(Math.abs(z - 1.21) < 0.01, `zoom 1,21 attendu : ${z}`);
+  await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('0');
+  assert.equal(await page.inputValue('#zoom'), '1');
+  // Les touches sont ignorées pendant la saisie de la légende.
+  await page.focus('#captionText');
+  await page.keyboard.press('+');
+  assert.equal(await page.inputValue('#zoom'), '1');
+  await page.fill('#captionText', '');
+});
+
 await check('Téléphone à l\'horizontale : aperçu exploitable', async () => {
   const p2 = await context.newPage();
   await p2.setViewportSize({ width: 844, height: 390 });
@@ -295,6 +446,45 @@ await check('Web Share Target : la photo partagée s\'ouvre', async () => {
   assert.match(await page.textContent('#status'), /1600 × 1200/);
   const info = jpegInfo(await download('partage'));
   assert.deepEqual([info.width, info.height], [1748, 1181]);
+});
+
+await check('Web Share Target : plusieurs photos partagées d\'un coup', async () => {
+  await page.evaluate(() => {
+    const f = document.createElement('form');
+    f.method = 'post';
+    f.action = 'share-target';
+    f.enctype = 'multipart/form-data';
+    f.innerHTML = '<input type="file" name="photo" id="shareInput2" multiple>';
+    document.body.appendChild(f);
+  });
+  await page.setInputFiles('#shareInput2', [photoPath, portraitPath]);
+  await Promise.all([
+    page.waitForURL((u) => u.pathname === new URL(BASE).pathname),
+    page.evaluate(() => document.querySelector('#shareInput2').form.submit()),
+  ]);
+  await page.waitForSelector('#navRow:not([hidden])');
+  assert.match(await page.textContent('#counter'), /^1 \/ 2/);
+});
+
+if (!process.env.SELPHY_URL) {
+  await check('Mise à jour : bannière « Nouvelle version disponible »', async () => {
+    assert.ok(await page.isHidden('#updateBanner'));
+    swExtra = '\n// nouvelle version simulée\n';
+    await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+    await page.waitForSelector('#updateBanner:not([hidden])');
+    swExtra = '';
+  });
+}
+
+await check('Navigateur intégré (WebView) : avertissement affiché', async () => {
+  const ctx2 = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0 Mobile Safari/537.36',
+  });
+  const p3 = await ctx2.newPage();
+  await p3.goto(BASE);
+  assert.ok(await p3.isVisible('#browserHint'));
+  await ctx2.close();
+  assert.ok(await page.isHidden('#browserHint'), 'pas d\'avertissement dans Chrome');
 });
 
 await check('Hors ligne : l\'appli se recharge depuis le cache', async () => {

@@ -29,16 +29,42 @@ demandent la cassette optionnelle PCC-CP400. Les feuilles de 8 mini-étiquettes
 
 | | |
 |---|---|
-| **Import** | bouton « Choisir une photo », glisser-déposer (desktop), ou **Partager → Selphy Postcard** depuis la galerie Android (Web Share Target). |
+| **Import** | bouton « Choisir des photos » (sélection multiple), glisser-déposer (desktop), ou **Partager → Selphy Postcard** depuis la galerie Android, une ou plusieurs photos à la fois. |
+| **Série de photos** | ◀ 3 / 10 ▶ pour passer d'une photo à l'autre ; chaque photo garde son cadrage, sa rotation et sa légende. Le compteur indique les photos déjà exportées (✓). « Photo suivante » en fin de série ouvre le sélecteur ; « ＋ Ajouter » complète la série. |
 | **Orientation** | choisie automatiquement selon la photo (orientation EXIF respectée) ; bouton ▭ / ▯ pour basculer paysage / portrait, bouton ⟳ pour pivoter de 90° une photo mal orientée. |
-| **Remplir** | la photo couvre toute la carte. Déplacez au doigt / à la souris, zoomez par pincement, molette ou curseur. Le zoom ne descend jamais sous la couverture minimale : pas de bord blanc possible. **Double-tap** ou bouton « Recentrer » pour revenir au cadrage initial. |
+| **Remplir** | la photo couvre toute la carte. Déplacez au doigt / à la souris, zoomez par pincement, molette ou curseur. Le zoom ne descend jamais sous la couverture minimale : pas de bord blanc possible. |
+| **Ajuster** | photo entière visible, que l'on peut aussi réduire (jusqu'à 30 %), agrandir et déplacer ; le fond est la même photo agrandie et floutée, ou blanc, ou noir. |
+| **Polaroïd** | cadre blanc avec une bande plus large en bas, idéale pour une légende ; la photo se cadre comme en mode Remplir. |
+| **Recentrer** | double-tap sur l'aperçu, bouton « Recentrer » ou touche 0. |
+| **Texte** | légende propre à chaque photo, en police simple, serif ou manuscrite. Bouton « Date de la photo » : date de prise de vue lue dans l'EXIF (sinon date du fichier). En Polaroïd elle va dans la bande du bas, sinon en bas de la photo, toujours dans la zone de sécurité. |
+| **Retouches** | lumière, contraste, couleurs, et bouton « Éclaircir pour l'impression » (les tirages sortent souvent un peu plus sombres qu'à l'écran). Elles s'appliquent à toutes les photos jusqu'à « Réinitialiser ». |
 | **Qualité** | badge en haut à droite : résolution réelle à l'impression (300 dpi = maximum de la SELPHY). Il passe en orange sous 200 dpi (photo trop petite ou trop zoomée : risque de flou). |
-| **Ajuster** | photo entière visible ; le fond est la même photo agrandie et floutée, ou blanc, ou noir. |
 | **Zone de sécurité** | guide en pointillés : ~2 mm sur chaque bord sont rognés en impression sans bordure. Évitez d'y placer du texte ou des visages. Le guide n'apparaît pas dans l'export. |
 | **Export** | JPEG qualité 0,95, 300 dpi, nommé `selphy_AAAAMMJJ_HHMMSS.jpg`. Boutons **Télécharger** et **Partager** (si le navigateur sait partager des fichiers). |
-| **Photo suivante** | rouvre le sélecteur pour enchaîner les photos (mode et fond sont conservés). |
-| **Retirer la photo** | ferme la photo et revient à l'accueil. La photo d'origine n'est jamais modifiée ni supprimée : l'appli ne fait que la lire, et chaque export est un nouveau fichier. |
+| **Retirer** | retire la photo de la série. La photo d'origine n'est jamais modifiée ni supprimée : l'appli ne fait que la lire, et chaque export est un nouveau fichier. |
+| **Clavier (desktop)** | flèches : déplacer (Maj : plus vite) · + / − : zoom · 0 : recentrer · Page préc. / suiv. : photo précédente / suivante. |
+| **Mises à jour** | quand une nouvelle version est publiée, un bandeau « Nouvelle version disponible — Recharger » apparaît. |
 | **Écran horizontal** | sur téléphone tourné, tablette ou desktop, les contrôles passent dans une colonne à droite de l'aperçu. |
+
+## Où sont enregistrées les photos ?
+
+Une appli web ne peut pas écrire directement dans la galerie ; deux chemins :
+
+- **Télécharger** → le JPEG va dans le dossier **Téléchargements** (`Download/`)
+  du téléphone. Il apparaît dans l'appli *Fichiers*, et dans la galerie :
+  album « Download » (Galerie Samsung), ou *Google Photos → Bibliothèque →
+  Photos de l'appareil → Download*.
+- **Partager** → la feuille de partage d'Android s'ouvre : choisir
+  **Google Photos** (« Importer dans Photos ») pour l'avoir dans la galerie,
+  ou SELPHY Photo Layout, Drive, Bluetooth… Aucune appli SELPHY n'est
+  nécessaire pour que ce bouton apparaisse.
+
+**Le bouton Partager n'apparaît pas / le téléchargement ne donne rien ?**
+La page est probablement ouverte dans un *navigateur intégré* (lien touché dans
+WhatsApp, Messenger, Gmail, Facebook…) : ces navigateurs ne savent ni partager
+ni télécharger des fichiers. L'appli affiche alors un bandeau orange. Ouvrez la
+page dans **Chrome** (menu ⋮ → « Ouvrir dans Chrome »), puis installez-la.
+Firefox pour Android ne sait pas non plus partager des fichiers.
 
 ### Performances
 
@@ -94,9 +120,12 @@ Le test charge une photo 4:3 (1600 × 1200) et vérifie : export en mode
 Remplir puis Ajuster (flou, blanc, noir) en **exactement 1748 × 1181 px à 300 dpi**,
 le contenu des pixels (recadrage / bandes de fond), le zoom minimal, l'indicateur
 de résolution, le double-clic « Recentrer », la bascule portrait (1181 × 1748),
-la rotation 90°, le bouton « Retirer », la mise en page d'un téléphone à
-l'horizontale, la réduction d'une photo de 37 Mpx, le Web Share Target, le
-fonctionnement hors ligne et l'absence d'erreur console. Les JPEG produits sont gardés dans `tests/output/`.
+la rotation 90°, le bouton « Retirer », les formats carte et carré, la série de
+photos (cadrage mémorisé, fin de série), le Polaroïd et sa légende, la date EXIF,
+le mode Ajuster libre, les retouches, le clavier, la mise en page d'un téléphone
+à l'horizontale, la réduction d'une photo de 37 Mpx, le Web Share Target (une ou
+plusieurs photos), l'avis de mise à jour, l'avertissement « navigateur intégré »,
+le fonctionnement hors ligne et l'absence d'erreur console. Les JPEG produits sont gardés dans `tests/output/`.
 
 Pour tester la version en ligne plutôt que les fichiers locaux :
 

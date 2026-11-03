@@ -7,10 +7,10 @@
  */
 'use strict';
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const APP_CACHE = `selphy-postcard-${VERSION}`;
 const SHARE_CACHE = 'selphy-share';        // même nom que dans app.js
-const SHARE_KEY = './__shared-photo';      // même clé que dans app.js
+const SHARE_PREFIX = './__shared-photo-'; // + numéro ; même préfixe que dans app.js
 
 // Chemins relatifs : l'appli fonctionne aussi dans un sous-dossier (GitHub Pages).
 const ASSETS = [
@@ -68,17 +68,23 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-/** Range la photo partagée dans le cache puis ouvre l'appli qui la récupérera. */
+/** Range les photos partagées dans le cache puis ouvre l'appli qui les récupérera. */
 async function handleShare(request) {
   const appUrl = new URL('./', self.registration.scope);
   try {
     const form = await request.formData();
-    const file = form.getAll('photo').find((f) => f && typeof f !== 'string');
-    if (file) {
+    const files = form.getAll('photo').filter((f) => f && typeof f !== 'string');
+    if (files.length) {
       const cache = await caches.open(SHARE_CACHE);
-      await cache.put(SHARE_KEY, new Response(file, {
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      }));
+      // Oublie un partage précédent qui n'aurait pas été ouvert.
+      for (const req of await cache.keys()) await cache.delete(req);
+      await Promise.all(files.map((file, i) => cache.put(`${SHARE_PREFIX}${i}`, new Response(file, {
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'X-Filename': encodeURIComponent(file.name || 'photo'),
+          'X-Last-Modified': String(file.lastModified || ''),
+        },
+      }))));
       appUrl.searchParams.set('shared', '1');
     }
   } catch (e) {
