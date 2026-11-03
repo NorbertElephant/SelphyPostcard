@@ -126,3 +126,4 @@ Les photos ne quittent jamais l'appareil : pas de serveur, pas d'analytics, et l
 politique de sécurité du contenu (`connect-src 'none'`) interdit toute requête
 réseau depuis la page. Une photo reçue par « Partager » transite seulement par
 le cache local du navigateur et en est effacée dès son ouverture.
+# SelphyPostcard
