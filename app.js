@@ -16,6 +16,12 @@ const PAPER_SHORT_MM = 100;
 const SAFE_MM = 2;              // marge rognée en impression sans bordure
 const MAX_ZOOM = 5;
 const JPEG_QUALITY = 0.95;
+const DPI = 300;
+const WARN_DPI = 200;           // en dessous, l'impression risque d'être floue
+// Au-delà de 3× la sortie, les pixels en plus n'améliorent pas l'impression
+// (même à zoom 3) mais coûtent beaucoup de mémoire : on réduit la photo.
+const MAX_DECODE = OUT_LONG * 3;
+const PREVIEW_MAX = 2048;       // copie allégée utilisée pour l'aperçu et le flou
 const SHARE_CACHE = 'selphy-share';
 const SHARE_KEY = './__shared-photo';
 
@@ -24,12 +30,14 @@ const SHARE_KEY = './__shared-photo';
 // ---------------------------------------------------------------------------
 
 const state = {
-  bitmap: null,       // ImageBitmap de la photo (orientation EXIF appliquée)
+  bitmap: null,       // ImageBitmap de travail (orientation EXIF appliquée, ≤ MAX_DECODE)
+  small: null,        // copie ≤ PREVIEW_MAX (peut être le même objet que bitmap)
+  serial: 0,          // change à chaque nouvelle image (sert de clé au pré-export)
   landscape: true,    // orientation de la carte
   mode: 'fill',       // 'fill' (Remplir) | 'fit' (Ajuster)
   bg: 'blur',         // fond en mode Ajuster : 'blur' | 'white' | 'black'
   zoom: 1,            // 1 = couverture minimale
-  cx: 0, cy: 0,       // centre de la zone visible, en pixels de la photo
+  cx: 0, cy: 0,       // centre de la zone visible, en pixels de state.bitmap
   guide: true,        // affiche la zone de sécurité dans l'aperçu
 };
 
@@ -47,15 +55,19 @@ const els = {
   fileInput: $('fileInput'),
   pickBtn: $('pickBtn'),
   orientBtn: $('orientBtn'),
+  rotateBtn: $('rotateBtn'),
   zoom: $('zoom'),
   zoomRow: $('zoomRow'),
+  recenterBtn: $('recenterBtn'),
   bgRow: $('bgRow'),
   guide: $('guide'),
   downloadBtn: $('downloadBtn'),
   shareBtn: $('shareBtn'),
   nextBtn: $('nextBtn'),
+  removeBtn: $('removeBtn'),
   installBtn: $('installBtn'),
   formatLabel: $('formatLabel'),
+  quality: $('quality'),
   status: $('status'),
 };
 const pctx = els.preview.getContext('2d');
@@ -104,12 +116,31 @@ function resetView() {
   clampView();
 }
 
+/** Résolution réelle à l'impression : pixels de la photo par pouce de papier. */
+function effectiveDpi() {
+  const [w, h] = outputSize();
+  if (state.mode === 'fill') return DPI * viewSize()[0] / w;
+  const s = Math.min(w / state.bitmap.width, h / state.bitmap.height);
+  return DPI / s;
+}
+
 // ---------------------------------------------------------------------------
 // Rendu (commun à l'aperçu et à l'export)
 // ---------------------------------------------------------------------------
 
+/**
+ * Choisit l'image source : la copie allégée suffit à l'aperçu tant qu'elle a au
+ * moins autant de pixels que la zone dessinée (span px de la photo → dest px
+ * à l'écran). L'export (hiRes) lit toujours la photo de travail.
+ */
+function sourceFor(span, dest, hiRes) {
+  if (hiRes) return state.bitmap;
+  const k = state.small.width / state.bitmap.width;
+  return span * k >= dest ? state.small : state.bitmap;
+}
+
 /** Dessine la carte sur ctx, à la taille w × h (même ratio que la carte). */
-function renderCard(ctx, w, h) {
+function renderCard(ctx, w, h, hiRes) {
   const bmp = state.bitmap;
   ctx.save();
   ctx.imageSmoothingEnabled = true;
@@ -118,14 +149,16 @@ function renderCard(ctx, w, h) {
   if (state.mode === 'fill') {
     // Remplir : on découpe la zone visible de la photo et on l'étire sur toute la carte.
     const [vw, vh] = viewSize();
-    ctx.drawImage(bmp, state.cx - vw / 2, state.cy - vh / 2, vw, vh, 0, 0, w, h);
+    const src = sourceFor(vw, w, hiRes);
+    const k = src.width / bmp.width;
+    ctx.drawImage(src, (state.cx - vw / 2) * k, (state.cy - vh / 2) * k, vw * k, vh * k, 0, 0, w, h);
   } else {
     // Ajuster : fond, puis photo entière centrée.
     drawBackground(ctx, w, h);
     const s = Math.min(w / bmp.width, h / bmp.height);
     const dw = bmp.width * s;
     const dh = bmp.height * s;
-    ctx.drawImage(bmp, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    ctx.drawImage(sourceFor(bmp.width, dw, hiRes), (w - dw) / 2, (h - dh) / 2, dw, dh);
   }
   ctx.restore();
 }
@@ -137,7 +170,8 @@ function drawBackground(ctx, w, h) {
     ctx.fillRect(0, 0, w, h);
     return;
   }
-  const bmp = state.bitmap;
+  // Le flou efface les détails : la copie allégée suffit, et c'est bien plus rapide.
+  const bmp = state.small;
   // Photo en mode « couverture », légèrement agrandie pour masquer les bords
   // transparents produits par le flou.
   const s = Math.max(w / bmp.width, h / bmp.height) * 1.15;
@@ -167,9 +201,8 @@ function drawBackground(ctx, w, h) {
 
 /** Pointillés indiquant la zone qui sera rognée à l'impression sans bordure. */
 function drawSafeGuide(ctx, w, h) {
-  const [longMm, shortMm] = [PAPER_LONG_MM, PAPER_SHORT_MM];
-  const mx = w * SAFE_MM / (state.landscape ? longMm : shortMm);
-  const my = h * SAFE_MM / (state.landscape ? shortMm : longMm);
+  const mx = w * SAFE_MM / (state.landscape ? PAPER_LONG_MM : PAPER_SHORT_MM);
+  const my = h * SAFE_MM / (state.landscape ? PAPER_SHORT_MM : PAPER_LONG_MM);
   const lw = Math.max(1, w / 400);
   ctx.save();
   // Bandes rognées légèrement assombries.
@@ -227,9 +260,21 @@ function draw() {
     if (!state.bitmap) return;
     const { width: w, height: h } = els.preview;
     pctx.clearRect(0, 0, w, h);
-    renderCard(pctx, w, h);
+    renderCard(pctx, w, h, false);
     if (state.guide) drawSafeGuide(pctx, w, h);
+    updateQuality();
+    schedulePrerender();
   });
+}
+
+/** Affiche la résolution d'impression, en orange si elle est trop basse. */
+function updateQuality() {
+  const dpi = Math.round(effectiveDpi());
+  const low = dpi < WARN_DPI;
+  els.quality.hidden = false;
+  els.quality.classList.toggle('warn', low);
+  els.quality.textContent = dpi >= DPI ? `${DPI} dpi ✓` : low ? `⚠ ${dpi} dpi : risque de flou` : `${dpi} dpi`;
+  els.quality.title = 'Résolution réelle de la photo à l\'impression (300 dpi = qualité maximale de la SELPHY)';
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +289,33 @@ async function decodeImage(blob) {
     // Anciens navigateurs qui ne connaissent pas l'option : ils appliquent l'EXIF par défaut.
     return await createImageBitmap(blob);
   }
+}
+
+/** Réduit bmp pour que son grand côté ne dépasse pas max (bmp est libéré si réduit). */
+async function shrink(bmp, max, closeOriginal) {
+  const long = Math.max(bmp.width, bmp.height);
+  if (long <= max) return bmp;
+  const k = max / long;
+  const out = await createImageBitmap(bmp, {
+    resizeWidth: Math.round(bmp.width * k),
+    resizeHeight: Math.round(bmp.height * k),
+    resizeQuality: 'high',
+  });
+  if (closeOriginal) bmp.close();
+  return out;
+}
+
+/** Installe une nouvelle image de travail (et sa copie allégée). */
+async function setBitmap(bmp) {
+  const small = await shrink(bmp, PREVIEW_MAX, false);
+  if (state.small && state.small !== state.bitmap) state.small.close();
+  if (state.bitmap) state.bitmap.close();
+  state.bitmap = bmp;
+  state.small = small;
+  state.serial++;
+  // Orientation automatique : paysage si la photo est plus large que haute.
+  state.landscape = bmp.width >= bmp.height;
+  resetView();
 }
 
 async function loadFile(file) {
@@ -261,18 +333,62 @@ async function loadFile(file) {
     setStatus('Impossible de lire cette image (format non pris en charge par le navigateur ?).');
     return;
   }
-  if (state.bitmap) state.bitmap.close();
-  state.bitmap = bmp;
-  // Orientation automatique : paysage si la photo est plus large que haute.
-  state.landscape = bmp.width >= bmp.height;
-  resetView();
+  const [ow, oh] = [bmp.width, bmp.height];
+  try {
+    bmp = await shrink(bmp, MAX_DECODE, true);
+    await setBitmap(bmp);
+  } catch (e) {
+    console.error(e);
+    setStatus('Photo trop lourde pour la mémoire de l\'appareil.');
+    return;
+  }
 
+  document.body.classList.add('has-photo');
   els.empty.hidden = true;
   els.preview.hidden = false;
   els.controls.hidden = false;
   updateUi();
   layoutPreview();
-  setStatus(`Photo ${bmp.width} × ${bmp.height} px`);
+  setStatus(bmp.width === ow
+    ? `Photo ${ow} × ${oh} px`
+    : `Photo ${ow} × ${oh} px (réduite à ${bmp.width} × ${bmp.height}, sans perte à l'impression)`);
+}
+
+/** Pivote la photo de 90° dans le sens horaire (photos à l'orientation erronée). */
+async function rotate90() {
+  const src = state.bitmap;
+  const canvas = document.createElement('canvas');
+  canvas.width = src.height;
+  canvas.height = src.width;
+  const ctx = canvas.getContext('2d');
+  ctx.translate(canvas.width, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(src, 0, 0);
+  await setBitmap(await createImageBitmap(canvas));
+  canvas.width = canvas.height = 0;   // libère la mémoire du canvas tout de suite
+  updateUi();
+  layoutPreview();
+}
+
+/**
+ * Retire la photo de l'appli et revient à l'écran d'accueil. Libère la mémoire ;
+ * le fichier d'origine n'est jamais modifié (l'appli ne fait que le lire).
+ */
+function removePhoto() {
+  clearTimeout(prerenderTimer);
+  exportCache = null;
+  if (state.small && state.small !== state.bitmap) state.small.close();
+  if (state.bitmap) state.bitmap.close();
+  state.bitmap = state.small = null;
+  state.serial++;
+
+  document.body.classList.remove('has-photo');
+  els.preview.hidden = true;
+  els.controls.hidden = true;
+  els.quality.hidden = true;
+  els.empty.hidden = false;
+  els.formatLabel.textContent = '100 × 148 mm';
+  setStatus('');
 }
 
 function setStatus(msg) {
@@ -294,13 +410,14 @@ function updateUi() {
   els.zoomRow.hidden = state.mode !== 'fill';
   els.bgRow.hidden = state.mode !== 'fit';
   els.zoom.value = String(state.zoom);
-  els.orientBtn.textContent = state.landscape ? '↻ Paysage' : '↻ Portrait';
+  els.orientBtn.textContent = state.landscape ? '▭ Paysage' : '▯ Portrait';
   els.formatLabel.textContent = state.landscape ? '148 × 100 mm' : '100 × 148 mm';
   els.preview.classList.toggle('static', state.mode !== 'fill');
 }
 
 els.pickBtn.addEventListener('click', () => els.fileInput.click());
 els.nextBtn.addEventListener('click', () => els.fileInput.click());
+els.removeBtn.addEventListener('click', removePhoto);
 els.fileInput.addEventListener('change', () => {
   loadFile(els.fileInput.files[0]);
   els.fileInput.value = '';   // permet de re-sélectionner le même fichier
@@ -325,10 +442,30 @@ els.orientBtn.addEventListener('click', () => {
   layoutPreview();
 });
 
+els.rotateBtn.addEventListener('click', async () => {
+  if (!state.bitmap) return;
+  els.rotateBtn.disabled = true;
+  try {
+    await rotate90();
+  } catch (e) {
+    console.error(e);
+    setStatus('Impossible de pivoter la photo.');
+  } finally {
+    els.rotateBtn.disabled = false;
+  }
+});
+
 els.zoom.addEventListener('input', () => {
   // Le slider zoome autour du centre de l'aperçu.
   zoomAt(parseFloat(els.zoom.value), previewCss.w / 2, previewCss.h / 2);
 });
+
+function recenter() {
+  resetView();
+  els.zoom.value = '1';
+  draw();
+}
+els.recenterBtn.addEventListener('click', recenter);
 
 els.guide.addEventListener('change', () => {
   state.guide = els.guide.checked;
@@ -374,6 +511,7 @@ function panBy(dx, dy) {
 
 const pointers = new Map();   // pointerId -> {x, y}
 let pinch = null;             // {dist, midX, midY} pendant un pinch
+let lastTap = { t: 0, x: 0, y: 0 };   // pour détecter le double-tap
 
 function localPoint(e) {
   const r = els.preview.getBoundingClientRect();
@@ -391,8 +529,22 @@ function pinchInfo() {
 
 els.preview.addEventListener('pointerdown', (e) => {
   if (state.mode !== 'fill') return;
+  const p = localPoint(e);
+
+  // Double-tap / double-clic (même endroit, < 300 ms) : recentrer.
+  // Fait main car le dblclick n'est pas fiable au doigt avec touch-action: none.
+  if (pointers.size === 0) {
+    const now = performance.now();
+    if (now - lastTap.t < 300 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) {
+      lastTap.t = 0;
+      recenter();
+      return;
+    }
+    lastTap = { t: now, x: p.x, y: p.y };
+  }
+
   els.preview.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId, localPoint(e));
+  pointers.set(e.pointerId, p);
   if (pointers.size === 2) pinch = pinchInfo();
   els.preview.classList.add('dragging');
 });
@@ -464,12 +616,12 @@ async function exportJpeg() {
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
-  renderCard(ctx, w, h);   // sans le guide de sécurité
+  renderCard(ctx, w, h, true);   // sans le guide de sécurité
   const blob = await new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Échec de l\'encodage JPEG'))),
       'image/jpeg', JPEG_QUALITY);
   });
-  return setJpegDpi(blob, 300);
+  return setJpegDpi(blob, DPI);
 }
 
 /**
@@ -488,6 +640,34 @@ async function setJpegDpi(blob, dpi) {
   return new Blob([bytes], { type: 'image/jpeg' });
 }
 
+/*
+ * Pré-export : le JPEG est calculé en arrière-plan dès que le cadrage ne bouge
+ * plus. « Partager » est alors instantané, ce qui compte : Chrome n'autorise
+ * navigator.share() que quelques secondes après le toucher de l'utilisateur.
+ */
+let exportCache = null;   // { key, promise }
+let prerenderTimer = 0;
+
+function exportKey() {
+  return [state.serial, state.mode, state.bg, state.landscape, state.zoom, state.cx, state.cy].join('|');
+}
+
+/** JPEG du cadrage actuel (réutilise le pré-export s'il est à jour). */
+function getExport() {
+  const key = exportKey();
+  if (!exportCache || exportCache.key !== key) {
+    const entry = { key, promise: exportJpeg() };
+    entry.promise.catch(() => { if (exportCache === entry) exportCache = null; });
+    exportCache = entry;
+  }
+  return exportCache.promise;
+}
+
+function schedulePrerender() {
+  clearTimeout(prerenderTimer);
+  prerenderTimer = setTimeout(() => getExport().catch(() => {}), 600);
+}
+
 /** Nom de fichier : selphy_AAAAMMJJ_HHMMSS.jpg (heure locale). */
 function fileName(d = new Date()) {
   const p = (n) => String(n).padStart(2, '0');
@@ -498,7 +678,7 @@ function fileName(d = new Date()) {
 els.downloadBtn.addEventListener('click', async () => {
   if (!state.bitmap) return;
   try {
-    const blob = await exportJpeg();
+    const blob = await getExport();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -523,7 +703,7 @@ if (navigator.canShare && navigator.canShare({ files: [probeFile] })) {
 els.shareBtn.addEventListener('click', async () => {
   if (!state.bitmap) return;
   try {
-    const blob = await exportJpeg();
+    const blob = await getExport();
     const file = new File([blob], fileName(), { type: 'image/jpeg' });
     await navigator.share({ files: [file], title: 'Carte postale SELPHY' });
     setStatus('Partagé.');

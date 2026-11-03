@@ -54,6 +54,18 @@ body {
 .topbar h1 { font-size: 1.1rem; margin: 0; }
 .format { color: var(--muted); font-size: 0.85rem; flex: 1; }
 
+/* Résolution effective d'impression (orange si risque de flou). */
+.quality {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.quality.warn { background: #b45309; border-color: #b45309; color: #fff; }
+
 /* ---------- Aperçu ---------- */
 .stage {
   position: relative;
@@ -150,13 +162,16 @@ input[type="range"] {
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .btn-big { min-height: 56px; padding: 0 28px; font-size: 1.1rem; }
 .btn-small { min-height: 36px; padding: 0 12px; font-size: 0.9rem; }
+.btn-icon { min-width: 48px; padding: 0; font-size: 1.3rem; }
+/* Action secondaire discrète, mais toujours une grande cible tactile. */
+.btn-link { flex: 1; border-color: transparent; background: transparent; color: var(--muted); font-weight: 500; }
 
 .actions .btn { flex: 1 1 0; }
 
 /* Contrôle segmenté (Remplir / Ajuster, Flou / Blanc / Noir) */
 .segmented {
   display: flex;
-  flex: 1;
+  flex: 1 1 180px;          /* passe à la ligne plutôt que d'écraser ses boutons */
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
@@ -184,7 +199,46 @@ input[type="range"] {
 }
 .status:not(:empty) { padding: 6px 16px 10px; }
 
-/* Desktop : contrôles un peu plus compacts, aperçu plus grand. */
+/* Desktop : aperçu un peu plus aéré. */
 @media (min-width: 900px) and (min-height: 700px) {
   .stage { padding: 32px; }
+}
+
+/* Écran à l'horizontale (téléphone tourné, tablette, desktop) : les contrôles
+   passent dans une colonne à droite, sinon ils mangeraient toute la hauteur. */
+@media (orientation: landscape) and (min-width: 600px) {
+  body.has-photo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(280px, 34vw, 380px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "top   top"
+      "stage controls"
+      "stage status";
+  }
+  body.has-photo .topbar { grid-area: top; }
+  body.has-photo .stage { grid-area: stage; }
+  body.has-photo .controls {
+    grid-area: controls;
+    max-width: none;
+    margin: 0;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  body.has-photo .status {
+    grid-area: status;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+  }
+  body.has-photo .actions { flex-direction: column; align-items: stretch; }
+  body.has-photo .actions .btn { flex: none; }
+}
+
+/* Téléphone à l'horizontale : chaque pixel de hauteur compte. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .topbar { padding: 4px 16px; }
+  .stage { padding: 8px; }
+  .controls { gap: 8px; padding: 8px 12px; }
+  .check { min-height: 36px; }
 }

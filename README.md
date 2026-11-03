@@ -17,12 +17,26 @@ hors de l'appli (clé USB / carte SD, ou partage vers l'appli SELPHY).
 | | |
 |---|---|
 | **Import** | bouton « Choisir une photo », glisser-déposer (desktop), ou **Partager → Selphy Postcard** depuis la galerie Android (Web Share Target). |
-| **Orientation** | choisie automatiquement selon la photo (orientation EXIF respectée) ; bouton ↻ pour basculer paysage / portrait. |
-| **Remplir** | la photo couvre toute la carte. Déplacez au doigt / à la souris, zoomez par pincement, molette ou curseur. Le zoom ne descend jamais sous la couverture minimale : pas de bord blanc possible. |
+| **Orientation** | choisie automatiquement selon la photo (orientation EXIF respectée) ; bouton ▭ / ▯ pour basculer paysage / portrait, bouton ⟳ pour pivoter de 90° une photo mal orientée. |
+| **Remplir** | la photo couvre toute la carte. Déplacez au doigt / à la souris, zoomez par pincement, molette ou curseur. Le zoom ne descend jamais sous la couverture minimale : pas de bord blanc possible. **Double-tap** ou bouton « Recentrer » pour revenir au cadrage initial. |
+| **Qualité** | badge en haut à droite : résolution réelle à l'impression (300 dpi = maximum de la SELPHY). Il passe en orange sous 200 dpi (photo trop petite ou trop zoomée : risque de flou). |
 | **Ajuster** | photo entière visible ; le fond est la même photo agrandie et floutée, ou blanc, ou noir. |
 | **Zone de sécurité** | guide en pointillés : ~2 mm sur chaque bord sont rognés en impression sans bordure. Évitez d'y placer du texte ou des visages. Le guide n'apparaît pas dans l'export. |
 | **Export** | JPEG qualité 0,95, 300 dpi, nommé `selphy_AAAAMMJJ_HHMMSS.jpg`. Boutons **Télécharger** et **Partager** (si le navigateur sait partager des fichiers). |
-| **Photo suivante** | rouvre le sélecteur pour enchaîner les photos. |
+| **Photo suivante** | rouvre le sélecteur pour enchaîner les photos (mode et fond sont conservés). |
+| **Retirer la photo** | ferme la photo et revient à l'accueil. La photo d'origine n'est jamais modifiée ni supprimée : l'appli ne fait que la lire, et chaque export est un nouveau fichier. |
+| **Écran horizontal** | sur téléphone tourné, tablette ou desktop, les contrôles passent dans une colonne à droite de l'aperçu. |
+
+### Performances
+
+- Les photos de plus de 5244 px (3 × la sortie) sont réduites au chargement :
+  au-delà, les pixels n'apportent rien à l'impression mais saturent la mémoire
+  des téléphones. Le pic de mémoire au décodage reste celui de la photo d'origine.
+- L'aperçu utilise une copie allégée (2048 px) tant qu'elle est assez nette pour
+  le zoom en cours ; l'export utilise toujours la photo complète.
+- Le JPEG est pré-calculé en arrière-plan dès que le cadrage ne bouge plus :
+  « Partager » répond immédiatement (Chrome n'autorise le partage que quelques
+  secondes après le toucher).
 
 ## Fichiers
 
@@ -65,9 +79,11 @@ npm test
 
 Le test charge une photo 4:3 (1600 × 1200) et vérifie : export en mode
 Remplir puis Ajuster (flou, blanc, noir) en **exactement 1748 × 1181 px à 300 dpi**,
-le contenu des pixels (recadrage / bandes de fond), le zoom minimal, la bascule
-portrait (1181 × 1748), le Web Share Target, le fonctionnement hors ligne et
-l'absence d'erreur console. Les JPEG produits sont gardés dans `tests/output/`.
+le contenu des pixels (recadrage / bandes de fond), le zoom minimal, l'indicateur
+de résolution, le double-clic « Recentrer », la bascule portrait (1181 × 1748),
+la rotation 90°, le bouton « Retirer », la mise en page d'un téléphone à
+l'horizontale, la réduction d'une photo de 37 Mpx, le Web Share Target, le
+fonctionnement hors ligne et l'absence d'erreur console. Les JPEG produits sont gardés dans `tests/output/`.
 
 ## Déployer sur GitHub Pages
 

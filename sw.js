@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const APP_CACHE = `selphy-postcard-${VERSION}`;
 const SHARE_CACHE = 'selphy-share';        // même nom que dans app.js
 const SHARE_KEY = './__shared-photo';      // même clé que dans app.js

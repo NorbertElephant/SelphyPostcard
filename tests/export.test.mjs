@@ -146,6 +146,21 @@ await check('Remplir : le zoom ne descend pas sous la couverture minimale', asyn
   assert.deepEqual([info.width, info.height], [1748, 1181]);
 });
 
+await check('Qualité : résolution affichée, alerte si trop zoomé', async () => {
+  // 1600 px de photo sur 148 mm → 275 dpi au zoom 1 ; < 200 dpi au zoom 2.
+  await page.locator('#zoom').fill('1');
+  await page.waitForFunction(() => document.querySelector('#quality').textContent.startsWith('275'));
+  await page.locator('#zoom').fill('2');
+  await page.waitForSelector('#quality.warn');
+  assert.match(await page.textContent('#quality'), /137 dpi/);
+});
+
+await check('Recentrer : double-clic sur l\'aperçu', async () => {
+  await page.dblclick('#preview');
+  assert.equal(await page.inputValue('#zoom'), '1');
+  await page.waitForSelector('#quality:not(.warn)');
+});
+
 await check('Ajuster (fond flou) : JPEG 1748 × 1181', async () => {
   await page.click('[data-mode="fit"]');
   const info = jpegInfo(await download('ajuster-flou'));
@@ -176,7 +191,56 @@ await check('Portrait : JPEG 1181 × 1748', async () => {
   assert.deepEqual([info.width, info.height], [1181, 1748]);
 });
 
+await check('Rotation 90° : la photo devient 3:4, carte portrait', async () => {
+  await page.click('#orientBtn');   // revient en paysage pour vérifier la bascule auto
+  await page.click('#rotateBtn');
+  await page.waitForFunction(() => document.querySelector('#orientBtn').textContent.includes('Portrait'));
+  const buf = await download('rotation');
+  assert.deepEqual(Object.values(jpegInfo(buf)).slice(0, 2), [1748, 1181]);   // hauteur, largeur
+  // Rotation horaire : la moitié gauche (rouge) passe en haut, la droite (bleue) en bas.
+  const [top, bottom] = await samplePixels(buf, [[590, 3], [590, 1744]]);
+  assert.ok(near(top, [210, 50, 50]), `haut rouge attendu : ${top}`);
+  assert.ok(near(bottom, [50, 80, 210]), `bas bleu attendu : ${bottom}`);
+});
+
+await check('Retirer la photo : retour à l\'écran d\'accueil', async () => {
+  await page.click('#removeBtn');
+  await page.waitForSelector('#controls', { state: 'hidden' });
+  assert.ok(await page.isVisible('#pickBtn'));
+  assert.ok(await page.isHidden('#preview'));
+  assert.ok(await page.isHidden('#quality'));
+  // On peut recharger une photo ensuite.
+  await page.setInputFiles('#fileInput', photoPath);
+  await page.waitForSelector('#controls:not([hidden])');
+  await page.click('[data-mode="fill"]');
+});
+
 await page.screenshot({ path: join(OUT, 'screenshot.png') });
+
+await check('Téléphone à l\'horizontale : aperçu exploitable', async () => {
+  const p2 = await context.newPage();
+  await p2.setViewportSize({ width: 844, height: 390 });
+  await p2.goto(BASE);
+  await p2.setInputFiles('#fileInput', photoPath);
+  await p2.waitForSelector('#controls:not([hidden])');
+  await p2.waitForTimeout(200);
+  const box = await p2.locator('#preview').boundingBox();
+  await p2.screenshot({ path: join(OUT, 'screenshot-paysage.png') });
+  assert.ok(box.height > 280 && box.width > 400, `aperçu trop petit : ${box.width}×${box.height}`);
+  const btn = await p2.locator('#downloadBtn').boundingBox();
+  assert.ok(btn.y + btn.height <= 390, 'Télécharger hors écran');
+  await p2.close();
+});
+
+await check('Grande photo (37 Mpx) : réduite en mémoire, export intact', async () => {
+  const bigPath = join(OUT, 'photo-big.png');
+  await writeFile(bigPath, makeTestPhoto(7000, 5250));
+  await page.setInputFiles('#fileInput', bigPath);
+  await page.waitForFunction(() => /réduite à 5244 × 3933/.test(document.querySelector('#status').textContent));
+  await page.waitForFunction(() => document.querySelector('#quality').textContent.startsWith('300'));
+  const info = jpegInfo(await download('grande-photo'));
+  assert.deepEqual([info.width, info.height], [1748, 1181]);
+});
 
 await check('Web Share Target : la photo partagée s\'ouvre', async () => {
   // Attendre que le service worker contrôle la page.
