@@ -36,7 +36,8 @@ const server = createServer(async (req, res) => {
   }
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
-const BASE = `http://127.0.0.1:${server.address().port}/`;
+// SELPHY_URL permet de tester une version déployée (ex. GitHub Pages) au lieu du serveur local.
+const BASE = process.env.SELPHY_URL || `http://127.0.0.1:${server.address().port}/`;
 
 // ---- Photo de test 4:3 : moitié gauche rouge, moitié droite bleue,
 //      bande verte de 40 px en haut (rognée en Remplir, visible en Ajuster). ----
@@ -258,7 +259,7 @@ await check('Web Share Target : la photo partagée s\'ouvre', async () => {
   });
   await page.setInputFiles('#shareInput', photoPath);
   await Promise.all([
-    page.waitForURL((u) => u.pathname === '/' ),
+    page.waitForURL((u) => u.pathname === new URL(BASE).pathname),
     page.evaluate(() => document.querySelector('#shareInput').form.submit()),
   ]);
   await page.waitForSelector('#controls:not([hidden])');

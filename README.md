@@ -85,6 +85,12 @@ la rotation 90°, le bouton « Retirer », la mise en page d'un téléphone à
 l'horizontale, la réduction d'une photo de 37 Mpx, le Web Share Target, le
 fonctionnement hors ligne et l'absence d'erreur console. Les JPEG produits sont gardés dans `tests/output/`.
 
+Pour tester la version en ligne plutôt que les fichiers locaux :
+
+```bash
+SELPHY_URL=https://<utilisateur>.github.io/<dépôt>/ npm test
+```
+
 ## Déployer sur GitHub Pages
 
 1. Pousser ce dépôt sur GitHub (les fichiers de l'appli à la racine).
